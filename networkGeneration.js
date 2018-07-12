@@ -46,7 +46,8 @@ networkDropdown.append("div")
 			{type: "Minority", onclick: "changeToMinor()"},
 			{type: "Gilbert", onclick: "changeToGilbert()"},
 			{type: "Watts-Alpha", onclick: "changeToWattsA()"},
-			{type: "Watts-Beta", onclick: "changeToWattsB()"}
+			{type: "Watts-Beta", onclick: "changeToWattsB()"},
+			{type: "Common-friends", onclick: "changeToCF()"}
 	]).enter()
 	.append("a")
 	.attrs({id: d => { return "networkDropdownItem" + d.type; }, onclick: d => { return d.onclick; }})
@@ -169,14 +170,15 @@ let model = "barab";	// Current model generating new edges
 let initProb = 0.3;		// Probability that an edge in the initial graph exists
 let initPartners = 1;	// Determines to how many nodes each new node will connect
 let minorityPercentage = 0.2;	// Minority percentage for minority model
-let relationalFactor = 0.8;	// Factor deciding whether nodes of the same groups want to connect
-							// (1-relationalFactor for nodes of different groups)
+let homophily = 0.8;	// Factor deciding whether nodes of the same groups want to connect
+							// (1-homophily for nodes of different groups)
 let currGilbert;		// Memorizes current nodes for which an edge might be generated
 let initDegree = 4;		// Degree of nodes in regular network (watts)
 let rewireProb = 0.5;	// Probability that an edge gets rewired (wattsB)
 let globalIter;			// Keeps track of a variable with global scope
 let alphaFactor = 1;	// wattsA variable to regulate between caveman vs solaria propensities
 let finalAvgDegree = 5;	// wattsA halts as soon as this average degree is reached
+let friendProb = 0.4;
 
 let color;		// Color scale for nodes and chart bars
 
@@ -297,8 +299,9 @@ function fillParameterCell(d) {
 				.attr("onchange", () => {
 					if (d.value.id == "initProb" || 
 						d.value.id == "minorityPercentage" || 
-						d.value.id == "relationalFactor" || 
-						d.value.id == "rewireProb") {
+						d.value.id == "homophily" || 
+						d.value.id == "rewireProb" ||
+						d.value.id == "friendProb") {
 						return "updateText(\"" + d.value.id + "Text\", this.value/100)";
 					} else {
 						return "updateText(\"" + d.value.id + "Text\", this.value)";
@@ -314,8 +317,9 @@ function fillParameterCell(d) {
 				.attr("value", () => {
 					if (d.value.id == "initProb" || 
 						d.value.id == "minorityPercentage" || 
-						d.value.id == "relationalFactor" || 
-						d.value.id == "rewireProb") {
+						d.value.id == "homophily" || 
+						d.value.id == "rewireProb" ||
+						d.value.id == "friendProb") {
 						return d.value.value/100;
 					} else {
 						return d.value.value;
@@ -581,6 +585,7 @@ function setup() {
 	switch(model) {
 
 		// Generate random edges between initial nodes
+		case "comFr":
 		case "minor":
 		case "barab":
 			links = randomNetwork();
@@ -685,6 +690,7 @@ function toggleRunning(){
 			}
 
 			switch(model) {
+				case "comFr":
 				case "barab":
 				case "minor":
 					// If maximum amount nodes not yet reached and no custom network is being created
@@ -704,6 +710,12 @@ function toggleRunning(){
 							case "minor":
 								newNode.group = Math.random() < minorityPercentage ? "minor" : "major";
 								targets = minorities(newNode);
+								break;
+							case "comFr":
+								targets = commonFriends();
+
+								// Required for link visualization and coloring
+								globalIter = targets.length;
 								break;
 							default:
 								console.log("Wrong model in toggleRunning: " + model)
@@ -931,11 +943,11 @@ function minorities(newNode) {
 
 	// Calculate common divisor for all elements
 	let divisor = 0;
-	nodes.forEach(d => { divisor += d.group == newNode.group ? relationalFactor*d.deg : (1-relationalFactor)*d.deg; });
+	nodes.forEach(d => { divisor += d.group == newNode.group ? homophily*d.deg : (1-homophily)*d.deg; });
 
 	// Contains probabilities for the new node to connect to the corresponding existing node (also depending on the node's group)
 	let probs = nodes.map(d => { 
-		return d.group == newNode.group ? relationalFactor*d.deg/divisor : (1-relationalFactor)*d.deg/divisor; 
+		return d.group == newNode.group ? homophily*d.deg/divisor : (1-homophily)*d.deg/divisor; 
 	});
 
 	let timeout = 100;
@@ -1025,6 +1037,27 @@ function wattsPropensity(n) {
 	});
 	return neighborProbs;
 }
+
+/*
+ * Firstly selects a node at random and then choses nodes connected to the random one based on friendProb
+ * Returns an array containing random node and chosen adjacent nodes
+ *
+ */
+function commonFriends() {
+
+	// Find random person at a party and connect
+	const randNode = Math.floor(Math.random()*nodes.length);
+	const nbs = getNeighbors(randNode);
+	let targets = [nodes[randNode]];
+
+	// For each friend of that person there's a chance that it connects too
+	nbs.forEach(d => {
+		if (Math.random() < friendProb) {
+			targets.push(nodes[d])
+		}
+	});
+	return targets;
+}
 //
 // -----------------------------</ Network generation >-----------------------------
 //
@@ -1057,6 +1090,7 @@ function wattsPropensity(n) {
  */
  function setColorScale() {
 	switch(model) {
+		case "comFr":
 		case "wattsA":
 		case "wattsB":
 		case "gilbert":
@@ -1089,6 +1123,7 @@ function redraw() {
 
 	const linkStrokeWidth = (d, i) => {
 		switch(model) {
+			case "comFr":
 			case "barab":
 			case "minor":
 				return nodes.length == initNodes ? 1 : 2;
@@ -1107,6 +1142,7 @@ function redraw() {
 	// Colors for newly drawn edges
 	const linkStroke = (d, i) => {
 		switch(model) {
+			case "comFr":
 			case "barab":
 			case "minor":
 				return nodes.length == initNodes ? "black" : "red";
@@ -1143,6 +1179,8 @@ function redraw() {
 				case "minor":
 				case "gilbert":
 					return i > list.length - initPartners - 1;
+				case "comFr":
+					return i > globalIter;
 				case "wattsB":
 					return i == globalIter - 1;
 			}
@@ -1160,6 +1198,7 @@ function redraw() {
 		.style("stroke", "black")
 		.style("fill", d => { 
 			switch(model) {
+				case "comFr":
 				case "wattsA":
 				case "wattsB":
 				case "gilbert":
@@ -1182,6 +1221,7 @@ function redraw() {
 		.attr("r", d => { return radius(d); })
 		.style("fill", d => { 
 			switch(model) {
+				case "comFr":
 				case "wattsA":
 				case "wattsB":
 				case "gilbert":
@@ -1213,6 +1253,7 @@ function redraw() {
 		.duration(refreshRate)
 		.style("fill", d => { 
 			switch(model) {
+				case "comFr":
 				case "wattsA":
 				case "wattsB":
 				case "gilbert":
@@ -1292,6 +1333,7 @@ function updateChart(noAplUpdate=false) {
 				}
 			case "y":
 				switch(model) {
+					case "comFr":
 					case "wattsA":
 					case "wattsB":
 					case "gilbert":
@@ -1340,6 +1382,7 @@ function updateChart(noAplUpdate=false) {
 				}
 			case "h":
 				switch(model) {
+					case "comFr":
 					case "wattsA":
 					case "wattsB":
 					case "gilbert":
@@ -1423,22 +1466,8 @@ function updateChart(noAplUpdate=false) {
 	// Array of numbers where the i-th element indicates the amount of nodes with degree i
 	let degrees = allDegrees();
 
-	// Skip degrees if they're either smaller than amount of initial partners or minimal degree of node in initial random network
-	let skipDegs;
-	switch(model) {
-		case "barab":
-		case "minor":
-			skipDegs = Math.min(degrees.findIndex(d => { return d != 0; }));
-			break;
-		case "gilbert":
-		case "wattsA":
-		case "wattsB":
-			skipDegs = degrees.findIndex(d => { return d != 0; });
-			break;
-		default:
-			console.log("Wrong model in updateChart: " + model)
-			break;
-	}
+	// Skip degrees up to the smallest one that has nodes
+	let skipDegs = degrees.findIndex(d => { return d != 0; });
 
 	let xScale, yScale;		// Map values according to chart
 	let xTicks, yTicks;		// Format axis' accordingly
@@ -1504,6 +1533,7 @@ function updateChart(noAplUpdate=false) {
 		// Draw the rectangles (bars)
 		case "bar":
 			switch(model) {
+				case "comFr":
 				case "wattsA":
 				case "wattsB":
 				case "gilbert":
@@ -1679,6 +1709,9 @@ function showPaper() {
 		case "wattsB":
 			paperString += "Watts D.J., Strogatz S.H. (1998), Collective dynamics of 'small-world' networks";
 			break;
+		case "comFr":
+			paperString = "";		// TODO (?)
+			break;
 		default:
 			console.log("Wrong model in showPaper: " + model)
 			break;
@@ -1788,6 +1821,10 @@ function changeToActual() {
 // Called by network dropdown item "Barabasi"
 function changeToBarab() {
 	model = "barab";
+	if (document.getElementById("paramsDiv")) {
+		closeParams();
+		setParameters();
+	}
 	reset();
 }
 
@@ -1821,9 +1858,19 @@ function changeToWattsA() {
 	reset();
 }
 
-// Called by network dropdown item "WattsA"
+// Called by network dropdown item "WattsB"
 function changeToWattsB() {
 	model = "wattsB";
+	if (document.getElementById("paramsDiv")) {
+		closeParams();
+		setParameters();
+	}
+	reset();
+}
+
+// Called by network dropdown item "Common-friends"
+function changeToCF() {
+	model = "comFr";
 	if (document.getElementById("paramsDiv")) {
 		closeParams();
 		setParameters();
@@ -1867,7 +1914,7 @@ function setParameters() {
 			if (model == "minor") {
 				tableData = tableData.concat([	{"text": "Minority nodes percentage: ", "id": "minorityPercentage", "min": 0, "max": 100, "value": minorityPercentage*100,
 													"descr": "Determines the percentage of nodes belonging to the minority group."},
-												{"text": "[h] Homophily parameter: ", "id": "relationalFactor", "min": 0, "max": 100, "value": relationalFactor*100,
+												{"text": "[h] Homophily parameter: ", "id": "homophily", "min": 0, "max": 100, "value": homophily*100,
 													"descr": "The higher the value, the less willing are nodes of different groups to connect i.e. high group separation."}
 				]);
 			}
@@ -1893,6 +1940,11 @@ function setParameters() {
 												"descr": "Determines the initial degree for every node in the Watts-Model."},
 											{"text": "[\u03B2] Rewiring probability: ", "id": "rewireProb", "min": 0, "max": 100, "value": rewireProb*100,
 												"descr": "Determines the probability that a given edge gets rewired in the Watts-Model."}
+			]);
+			break;
+		case "comFr":
+			tableData = tableData.concat([	{"text": "Probability to connect to friend: ", "id": "friendProb", "min": 0, "max": 100, "value": friendProb*100,
+												"descr": "New node connects to other node's friends with this probability."}
 			]);
 			break;
 		default:
@@ -1979,12 +2031,12 @@ function saveParams() {
 					return;
 				}
 				minorityPercentage = checkInput;
-				checkInput = parseFloat(document.getElementById("relationalFactorText").value)
+				checkInput = parseFloat(document.getElementById("homophilyText").value)
 				if (isNaN(checkInput) || checkInput < 0 || checkInput > 1) {
 					alert("The homophily parameter must be between 0 and 1");
 					return;
 				}
-				relationalFactor = checkInput;
+				homophily = checkInput;
 			}
 			break;
 		case "gilbert":
@@ -2035,6 +2087,13 @@ function saveParams() {
 			}
 			rewireProb = checkInput;
 			break;
+		case "comFr":
+			checkInput = parseFloat(document.getElementById("friendProbText").value)
+			if (isNaN(checkInput) || checkInput < 0 || checkInput > 1) {
+				alert("Probability to connect to a friend must be etween 0 and 1");
+				return;
+			}
+			friendProb = checkInput;
 	}
 
 	checkInput = parseInt(document.getElementById("refreshRateText").value)
@@ -2059,11 +2118,12 @@ function setDefault() {
 	d3.select("#maxNodesText").attr("value", 512);
 	d3.select("#initProbText").attr("value", 0.3);
 	d3.select("#minorityPercentageText").attr("value", 0.2);
-	d3.select("#relationalFactorText").attr("value", 0.8);
+	d3.select("#homophilyText").attr("value", 0.8);
 	d3.select("#alphaFactorText").attr("value", 1);
 	d3.select("#finalAvgDegreeText").attr("value", 5);
 	d3.select("#initDegreeText").attr("value", 4);
 	d3.select("#rewireProbText").attr("value", 0.5);
+	d3.select("#friendProbText").attr("value", 0.4);
 	d3.select("#refreshRateText").attr("value", 200);
 }
 
@@ -2146,8 +2206,7 @@ function checkboxChange(cb) {
 
 /*
 --- TODO's ---
--parameters always visible
--add edge-adding model (befriend with random node, befriend with node's friend with certain probability)
+-more chart types
 
 --- BUG's ---
 -absolutely none :))
