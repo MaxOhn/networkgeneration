@@ -145,8 +145,7 @@ const svgChart = d3.select("#divChart").append("svg")
  d3.select("#container").append("div")
  	.styles({position: "absolute", bottom: 0})
  	.append("text")
- 	.text("Application created by Max Ohn for the course \"Softwarepraktikum\" during the summer semester 2018 " +
- 			"at the CSSH faculty of RWTH Aachen, supervision by Dr. Florian Lemmerich and Prof. Dr. Markus Strohmaier.")
+ 	.text("Created by Max Ohn in 2018's \"Forschungspraktikum\" course at RWTH Aachen")
 	.styles({"font-size": "12px", "font-family": "sans-serif"});
 
 //
@@ -172,13 +171,13 @@ let initPartners = 1;	// Determines to how many nodes each new node will connect
 let minorityPercentage = 0.2;	// Minority percentage for minority model
 let homophily = 0.8;	// Factor deciding whether nodes of the same groups want to connect
 							// (1-homophily for nodes of different groups)
-let currGilbert;		// Memorizes current nodes for which an edge might be generated
+let nodePairs;			// Contains all node pairs upon initialization, removes them step-by-step
 let initDegree = 4;		// Degree of nodes in regular network (watts)
 let rewireProb = 0.5;	// Probability that an edge gets rewired (wattsB)
 let globalIter;			// Keeps track of a variable with global scope
 let alphaFactor = 1;	// wattsA variable to regulate between caveman vs solaria propensities
 let finalAvgDegree = 5;	// wattsA halts as soon as this average degree is reached
-let friendProb = 0.4;
+let friendProb = 0.4;	// Probability to connect to nodes neighbor (comFr)
 
 let color;		// Color scale for nodes and chart bars
 
@@ -565,10 +564,10 @@ setup();
  */
 function setup() {
 
-	// Generate initial nodes of the form {x: a, y: b, deg: c} with
+	// Generate initial nodes of the form {x: a, y: b, deg: c, index: i} with
 	//		a = random value for the nodes initial horizontal position
 	//		b = random value for the nodes initial vertical position
-	//		d = 0 because no edges have been set yet, hence degree of zero
+	//		c = 0 because no edges have been set yet, hence degree of zero
 	nodes = d3.range(initNodes).map((d, i) => {
 		return {x: Math.random()*widthNetwork, y: Math.random()*heightNetwork, deg: 0, index: i};
 	});
@@ -593,7 +592,14 @@ function setup() {
 
 		// Set the "to check" nodes to the first two nodes
 		case "gilbert":
-			currGilbert = [0, 0];
+			nodePairs = [];
+			for (let i = 0; i < initNodes; i++) {
+				for (let j = 0; j < initNodes; j++) {
+					if (i != j) {
+						nodePairs.push([i, j]);
+					}
+				}
+			}
 			break;
 
 		// Generate a regular network
@@ -739,29 +745,26 @@ function toggleRunning(){
 				case "gilbert":
 					let foundEdge = false;
 
-					// Check until every pair of nodes has been checked
-					while(!foundEdge && currGilbert[0] < nodes.length) {
+					// Finding new edge
+					while (!foundEdge && nodePairs.length > 0) {
 
-						// Save next nodes to be compared
-						currGilbert[1]++;
-						if (currGilbert[1] == nodes.length) {
-							currGilbert[0]++;
-							currGilbert[1] = currGilbert[0]+1;
-						}
-						if (currGilbert[0] == nodes.length-1) {
-							finished = true;
-							stop();
-							break;
-						}
+						// Check for next node pair
+						const pair = nodePairs.splice(nodePairs.length*Math.random() | 0, 1)[0]
 
-						// If current node pair is valid and the probability decides for true, set edge and update degrees
-						if (currGilbert[0] != currGilbert[1] && Math.random() < initProb) {
+						// Add edge
+						if (Math.random() < initProb) {
 							foundEdge = true;
-							links.push({source: nodes[currGilbert[0]], target: nodes[currGilbert[1]]});
-							nodes[currGilbert[0]].deg++;
-							nodes[currGilbert[1]].deg++;
-							addLinkToNetwork(currGilbert[0], currGilbert[1]);
+							links.push({source: nodes[pair[0]], target: nodes[pair[1]]});
+							nodes[pair[0]].deg++;
+							nodes[pair[1]].deg++;
+							addLinkToNetwork(pair[0], pair[1]);
 						}
+					}
+
+					// All edges checked
+					if (nodePairs.length == 0) {
+						finished = true;
+						stop();
 					}
 					break;
 				case "wattsA":
@@ -876,7 +879,6 @@ function toggleRunning(){
 function randomNetwork(mustConnect=true) {
 
 	let isConnected;
-
 	let randLinks = [];
 	let l = nodes.length;
 	for (let i = 0; i < l-1; i++) {
@@ -890,7 +892,7 @@ function randomNetwork(mustConnect=true) {
 			}
 		}
 
-		// If the network should be fully connected but a node has no adjacent node yet, iterate again
+		// If each node should have an edge but some node has no adjacent node yet, iterate again
 		if (mustConnect && !isConnected) {
 			i--;
 		}
@@ -1049,11 +1051,13 @@ function commonFriends() {
 	const randNode = Math.floor(Math.random()*nodes.length);
 	const nbs = getNeighbors(randNode);
 	let targets = [nodes[randNode]];
+	nodes[randNode].deg++;
 
 	// For each friend of that person there's a chance that it connects too
 	nbs.forEach(d => {
 		if (Math.random() < friendProb) {
 			targets.push(nodes[d])
+			nodes[d].deg++;
 		}
 	});
 	return targets;
@@ -1121,6 +1125,7 @@ function commonFriends() {
  */
 function redraw() {
 
+	// Stroke width for new edges depends on model
 	const linkStrokeWidth = (d, i) => {
 		switch(model) {
 			case "comFr":
@@ -1139,7 +1144,7 @@ function redraw() {
 		}
 	}
 
-	// Colors for newly drawn edges
+	// Colors for newly drawn edges depend on model
 	const linkStroke = (d, i) => {
 		switch(model) {
 			case "comFr":
@@ -1171,7 +1176,7 @@ function redraw() {
 		link.filter((d, i, list) => { return i == globalIter-1; }).styles({"stroke-width": 2, stroke: "red"});
 	}
 
-	// Highlight new edges
+	// Transition new edges into normal style
 	link.filter((d, i, list) => { 
 			switch(model) {
 				case "wattsA":
@@ -1188,7 +1193,7 @@ function redraw() {
 		.duration(refreshRate)
 		.styles({"stroke-width": 1, stroke: "black"});
 
-	// Update node visuals (use option 2 if edges are supposed to be on top of nodes)
+	// Update node visuals
 	// Delete all nodes, then draw the old visuals anew (to get the transition effect)
 	svgNetwork.selectAll(".node").remove();
 	node = svgNetwork.selectAll(".node").data(oldNodes)
@@ -1237,8 +1242,7 @@ function redraw() {
 	// Add the new node
 	node = node.data(nodes).enter().append("circle")
 		.attrs({class: "node", r: radius, id: "new"})
-		.style("stroke", "black")
-		.style("fill", d => { return "red"; })
+		.styles({stroke: "black", fill: "red"})
 		.merge(node);
 
 	node.attrs({cx: d => { return model == "wattsB" || model == "wattsA" ? d.x : null; }, 
@@ -1247,7 +1251,7 @@ function redraw() {
 	// Clone nodes to safe last iteration
 	oldNodes = nodes.map(d => Object.assign({}, d));
 
-	// Highlight new node (filters for last element)
+	// Transition new node into normal style (filters for last element)
 	node.filter((d, i, list) => { return i === list.length - 1; })
 		.transition()
 		.duration(refreshRate)
@@ -2209,5 +2213,5 @@ function checkboxChange(cb) {
 -more chart types
 
 --- BUG's ---
--absolutely none :))
+-absolutely none :^^)
 */

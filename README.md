@@ -2,7 +2,7 @@
 
 This project is my contribution regarding the summer terms 2018 Softwarepraktikum course at the RWTH Aachen.
 
-Javascript searches for HTML element with id "container" and does everything from there.
+Javascript appends container element to body and does everything in there.
 
 [Running site](https://maxohn.github.io/networkgeneration/)
 
